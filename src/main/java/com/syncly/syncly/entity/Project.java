@@ -3,6 +3,10 @@ package com.syncly.syncly.entity;
 import java.time.Instant;
 import java.util.UUID;
 
+import org.hibernate.annotations.GenericGenerator;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -23,11 +27,14 @@ import lombok.NoArgsConstructor;
 public class Project {
 
     @Id
-    @GeneratedValue
+    @GeneratedValue(generator = "UUID")
+    @GenericGenerator(name = "UUID", strategy = "org.hibernate.id.UUIDGenerator")
+    @Column(updatable = false, nullable = false)
     private UUID id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "organisation_id")
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
     private Organisation organisation;
 
     private String name;

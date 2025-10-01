@@ -12,7 +12,9 @@ import com.syncly.syncly.service.impl.base.BaseServiceImpl;
 
 @Service
 public class ProjectServiceImpl extends BaseServiceImpl<Project, UUID> implements ProjectService {
-    public ProjectServiceImpl(ProjectRepository repository, JpaSpecificationExecutor<Project> specRepository){
+
+    public ProjectServiceImpl(ProjectRepository repository, JpaSpecificationExecutor<Project> specRepository) {
         super(repository, specRepository, Project.class);
     }
+
 }

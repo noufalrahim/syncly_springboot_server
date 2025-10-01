@@ -1,5 +1,6 @@
 package com.syncly.syncly.controller.base;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -38,7 +39,9 @@ public abstract class BaseController<T, D, ID> {
     public ResponseEntity<?> getAll() {
         List<T> entities = service.findAll();
         if (entityToDTO.isPresent()) {
-            List<D> dtos = entities.stream().map(entityToDTO.get()).toList();
+            List<D> dtos = entities.stream()
+                    .map(entityToDTO.get())
+                    .toList();
             return ResponseEntity.ok(dtos);
         }
         return ResponseEntity.ok(entities);
@@ -63,8 +66,27 @@ public abstract class BaseController<T, D, ID> {
     }
 
     @PostMapping
-    public ResponseEntity<?> create(@RequestBody T entity) {
+    public ResponseEntity<?> create(@RequestBody T entity) throws IllegalArgumentException, IllegalAccessException {
         T created = service.create(entity);
+
+        // Force full loading of all ManyToOne relations ending with "Id"
+        for (Field field : created.getClass().getDeclaredFields()) {
+            if (!field.getType().isPrimitive() && !field.getType().getName().startsWith("java")) {
+                field.setAccessible(true);
+                try {
+                    Object value = field.get(created);
+                    if (value != null) {
+                        // Trigger lazy load by accessing any field
+                        for (Field subField : value.getClass().getDeclaredFields()) {
+                            subField.setAccessible(true);
+                            subField.get(value);
+                        }
+                    }
+                } catch (IllegalAccessException | IllegalArgumentException | SecurityException ignored) {
+                }
+            }
+        }
+
         Object body;
         if (entityToDTO.isPresent()) {
             body = entityToDTO.get().apply(created);

@@ -14,7 +14,7 @@ public class ProjectDTO {
     private UUID id;
     private String name;
     private String emoji;
-    private UUID organisationId;
+    private OrganisationDTO organisation;
     private Instant createdAt;
     private Instant updatedAt;
 }
