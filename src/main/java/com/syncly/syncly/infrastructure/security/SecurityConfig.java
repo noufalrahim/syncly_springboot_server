@@ -22,6 +22,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import com.syncly.syncly.entity.User;
 import com.syncly.syncly.service.UserService;
+import com.syncly.syncly.wrapper.ServiceResponse;
 
 @Configuration
 public class SecurityConfig {
@@ -52,7 +53,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of("http://localhost:2000")); // your frontend
+        configuration.setAllowedOrigins(List.of("http://localhost:2000"));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);
@@ -76,10 +77,13 @@ public class SecurityConfig {
     @Bean
     public UserDetailsService userDetailsService() {
         return username -> {
-            List<User> users = userService.findAllByFields(Map.of("email", username), null, null);
-            if (users.isEmpty()) {
+            ServiceResponse<List<User>> usersResp = userService.findAllByFields(Map.of("email", username), null, null);
+            List<User> users = usersResp != null ? usersResp.getData() : null;
+
+            if (users == null || users.isEmpty()) {
                 throw new UsernameNotFoundException("User not found");
             }
+
             User user = users.get(0);
             return org.springframework.security.core.userdetails.User
                     .withUsername(user.getEmail())

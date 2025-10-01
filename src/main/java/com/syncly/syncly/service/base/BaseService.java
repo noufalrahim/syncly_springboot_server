@@ -5,15 +5,16 @@ import java.util.Map;
 import java.util.Optional;
 
 import com.syncly.syncly.filter.FilterCondition;
+import com.syncly.syncly.wrapper.ServiceResponse;
 
 public interface BaseService<T, ID> {
-    List<T> findAll();
-    Optional<T> findById(ID id);
-    T create(T entity) throws IllegalArgumentException, IllegalAccessException;
-    List<T> createMany(List<T> entities);
-    T createIfNotExist(T entity, String uniqueField);
-    T updateById(ID id, T entity);
-    void delete(ID id);
-    List<T> findAllByFields(Map<String, Object> filter, String orderBy, String orderDir);
-    List<T> findAllByConditions(List<FilterCondition> conditions);
+    ServiceResponse<List<T>> findAll();
+    ServiceResponse<Optional<T>> findById(ID id);
+    ServiceResponse<T> create(T entity) throws IllegalArgumentException, IllegalAccessException;
+    ServiceResponse<List<T>> createMany(List<T> entities);
+    ServiceResponse<T> createIfNotExist(T entity, String uniqueField);
+    ServiceResponse<T> updateById(ID id, T entity);
+    ServiceResponse<?> delete(ID id);
+    ServiceResponse<List<T>> findAllByFields(Map<String, Object> filter, String orderBy, String orderDir);
+    ServiceResponse<List<T>> findAllByConditions(List<FilterCondition> conditions);
 }

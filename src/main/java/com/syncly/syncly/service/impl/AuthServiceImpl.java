@@ -35,61 +35,71 @@ public class AuthServiceImpl implements AuthService {
         this.userService = userService;
         this.passwordEncoder = passwordEncoder;
     }
-    
+
     @Override
     public ServiceResponse<User> register(User user) {
-        Map<String, Object> filter = new HashMap<>();
-        filter.put("email", user.getEmail());
-        List<User> users = userService.findAllByFields(filter, null, null);
-        log.info("Users found with email {}: {}", user.getEmail(), users);
-        ServiceResponse<User> serviceResponse = new ServiceResponse<>();
-        if (users != null && !users.isEmpty()) {
-            serviceResponse.setData(null);
-            serviceResponse.setStatus(ServiceResponse.ResStatus.ERROR);
-            serviceResponse.setMessage("Email already in use");
-            return serviceResponse;
+        ServiceResponse<User> response = new ServiceResponse<>();
+
+        try {
+            Map<String, Object> filter = new HashMap<>();
+            filter.put("email", user.getEmail());
+            ServiceResponse<List<User>> existingUsersResp = userService.findAllByFields(filter, null, null);
+
+            if (existingUsersResp.getData() != null && !existingUsersResp.getData().isEmpty()) {
+                response.setStatus(ServiceResponse.ResStatus.ERROR);
+                response.setMessage("Email already in use");
+                response.setData(null);
+                return response;
+            }
+
+            user.setPassword(passwordEncoder.encode(user.getPassword()));
+            User savedUser = userService.create(user).getData();
+
+            response.setData(savedUser);
+            response.setStatus(ServiceResponse.ResStatus.SUCCESS);
+            response.setMessage("User registered successfully");
+
+        } catch (IllegalArgumentException | IllegalAccessException e) {
+            log.error("Error registering user", e);
+            response.setStatus(ServiceResponse.ResStatus.ERROR);
+            response.setMessage("Error registering user: " + e.getMessage());
+            response.setData(null);
         }
 
-        user.setPassword(passwordEncoder.encode(user.getPassword()));
-        try {
-            serviceResponse.setData(userService.create(user));
-        } catch (IllegalArgumentException | IllegalAccessException e) {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
-        }
-        serviceResponse.setStatus(ServiceResponse.ResStatus.SUCCESS);
-        serviceResponse.setMessage("User registered successfully");
-        return serviceResponse;
+        return response;
     }
 
     @Override
     public ServiceResponse<LoginResponseDTO> login(String email, String password) {
+        ServiceResponse<LoginResponseDTO> response = new ServiceResponse<>();
+
         try {
-            authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(email, password)
-            );
+            authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(email, password));
         } catch (AuthenticationException e) {
-            throw new RuntimeException("Invalid email/password");
+            response.setStatus(ServiceResponse.ResStatus.ERROR);
+            response.setMessage("Invalid email/password");
+            response.setData(null);
+            return response;
         }
 
         Map<String, Object> filter = new HashMap<>();
         filter.put("email", email);
-        List<User> users = userService.findAllByFields(filter, null, null);
-        ServiceResponse<LoginResponseDTO> serviceResponse = new ServiceResponse<>();
+        ServiceResponse<List<User>> usersResp = userService.findAllByFields(filter, null, null);
 
+        List<User> users = usersResp.getData();
         if (users == null || users.isEmpty()) {
-            serviceResponse.setData(null);
-            serviceResponse.setStatus(ServiceResponse.ResStatus.ERROR);
-            serviceResponse.setMessage("User not found");
-            return serviceResponse;
+            response.setStatus(ServiceResponse.ResStatus.ERROR);
+            response.setMessage("User not found");
+            response.setData(null);
+            return response;
         }
 
         User user = users.get(0);
         String token = jwtUtil.generateToken(user.getEmail());
-        LoginResponseDTO loginResponse = new LoginResponseDTO(user, token);
-        serviceResponse.setData(loginResponse);
-        serviceResponse.setStatus(ServiceResponse.ResStatus.SUCCESS);
-        serviceResponse.setMessage("Login successful");
-        return serviceResponse;
+        response.setData(new LoginResponseDTO(user, token));
+        response.setStatus(ServiceResponse.ResStatus.SUCCESS);
+        response.setMessage("Login successful");
+
+        return response;
     }
 }

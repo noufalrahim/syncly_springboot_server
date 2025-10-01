@@ -1,10 +1,10 @@
 package com.syncly.syncly.controller.base;
 
-import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.function.Function;
 
 import org.springframework.http.ResponseEntity;
@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import com.syncly.syncly.filter.FilterCondition;
 import com.syncly.syncly.filter.FilterOperator;
 import com.syncly.syncly.service.base.BaseService;
+import com.syncly.syncly.wrapper.ServiceResponse;
 
 public abstract class BaseController<T, D, ID> {
 
@@ -36,110 +37,83 @@ public abstract class BaseController<T, D, ID> {
     }
 
     @GetMapping
-    public ResponseEntity<?> getAll() {
-        List<T> entities = service.findAll();
-        if (entityToDTO.isPresent()) {
-            List<D> dtos = entities.stream()
-                    .map(entityToDTO.get())
-                    .toList();
-            return ResponseEntity.ok(dtos);
-        }
-        return ResponseEntity.ok(entities);
+    public ResponseEntity<ServiceResponse<List<D>>> getAll() {
+        ServiceResponse<List<T>> resp = service.findAll();
+        if (resp.getStatus() != ServiceResponse.ResStatus.SUCCESS) return ResponseEntity.status(resp.getStatusCode()).body(errorResponse(resp));
+
+        List<D> data = entityToDTO.isPresent() ?
+                resp.getData().stream().map(entityToDTO.get()).toList() :
+                (List<D>) resp.getData();
+
+        return ResponseEntity.ok(buildResponse(resp, data));
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<?> getById(@PathVariable ID id) {
-        Optional<T> entityOpt = service.findById(id);
-        if (entityOpt.isEmpty()) {
-            return ResponseEntity.ok().build();
-        }
+    public ResponseEntity<ServiceResponse<D>> getById(@PathVariable String id) {
+        UUID uuid = UUID.fromString(id);
+        ServiceResponse<Optional<T>> resp = service.findById((ID) uuid);
 
-        T entity = entityOpt.get();
-        Object body;
-        if (entityToDTO.isPresent()) {
-            body = entityToDTO.get().apply(entity);
-        } else {
-            body = entity;
-        }
+        if (resp.getStatus() != ServiceResponse.ResStatus.SUCCESS) return ResponseEntity.status(resp.getStatusCode()).body(errorResponse(resp));
+        if (resp.getData().isEmpty()) return ResponseEntity.ok(buildResponse(resp, null));
 
-        return ResponseEntity.ok(body);
+        T entity = resp.getData().get();
+        D body = entityToDTO.map(dtoFn -> dtoFn.apply(entity)).orElse((D) entity);
+
+        return ResponseEntity.ok(buildResponse(resp, body));
     }
 
     @PostMapping
-    public ResponseEntity<?> create(@RequestBody T entity) throws IllegalArgumentException, IllegalAccessException {
-        T created = service.create(entity);
+    public ResponseEntity<ServiceResponse<D>> create(@RequestBody T entity) throws IllegalArgumentException, IllegalAccessException {
+        ServiceResponse<T> resp = service.create(entity);
+        if (resp.getStatus() != ServiceResponse.ResStatus.SUCCESS) return ResponseEntity.status(resp.getStatusCode()).body(errorResponse(resp));
 
-        // Force full loading of all ManyToOne relations ending with "Id"
-        for (Field field : created.getClass().getDeclaredFields()) {
-            if (!field.getType().isPrimitive() && !field.getType().getName().startsWith("java")) {
-                field.setAccessible(true);
-                try {
-                    Object value = field.get(created);
-                    if (value != null) {
-                        // Trigger lazy load by accessing any field
-                        for (Field subField : value.getClass().getDeclaredFields()) {
-                            subField.setAccessible(true);
-                            subField.get(value);
-                        }
-                    }
-                } catch (IllegalAccessException | IllegalArgumentException | SecurityException ignored) {
-                }
-            }
-        }
-
-        Object body;
-        if (entityToDTO.isPresent()) {
-            body = entityToDTO.get().apply(created);
-        } else {
-            body = created;
-        }
-        return ResponseEntity.status(201).body(body);
+        T created = resp.getData();
+        D body = entityToDTO.map(dtoFn -> dtoFn.apply(created)).orElse((D) created);
+        return ResponseEntity.status(201).body(buildResponse(resp, body));
     }
 
     @PostMapping("/many")
-    public ResponseEntity<?> createMany(@RequestBody List<T> entities) {
-        List<T> created = service.createMany(entities);
-        if (entityToDTO.isPresent()) {
-            List<D> dtos = created.stream().map(entityToDTO.get()).toList();
-            return ResponseEntity.status(201).body(dtos);
-        }
-        return ResponseEntity.status(201).body(created);
+    public ResponseEntity<ServiceResponse<List<D>>> createMany(@RequestBody List<T> entities) {
+        ServiceResponse<List<T>> resp = service.createMany(entities);
+        if (resp.getStatus() != ServiceResponse.ResStatus.SUCCESS) return ResponseEntity.status(resp.getStatusCode()).body(errorResponse(resp));
+
+        List<D> data = entityToDTO.isPresent() ? resp.getData().stream().map(entityToDTO.get()).toList() : (List<D>) resp.getData();
+        return ResponseEntity.status(201).body(buildResponse(resp, data));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<?> update(@PathVariable ID id, @RequestBody T entity) {
-        T updated = service.updateById(id, entity);
-        Object body; // can be DTO or entity
-        if (entityToDTO.isPresent()) {
-            body = entityToDTO.get().apply(updated);
-        } else {
-            body = updated;
-        }
-        return ResponseEntity.ok(body);
+    public ResponseEntity<ServiceResponse<D>> update(@PathVariable ID id, @RequestBody T entity) {
+        ServiceResponse<T> resp = service.updateById(id, entity);
+        if (resp.getStatus() != ServiceResponse.ResStatus.SUCCESS) return ResponseEntity.status(resp.getStatusCode()).body(errorResponse(resp));
+
+        D body = entityToDTO.map(dtoFn -> dtoFn.apply(resp.getData())).orElse((D) resp.getData());
+        return ResponseEntity.ok(buildResponse(resp, body));
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable ID id) {
-        service.delete(id);
-        return ResponseEntity.noContent().build();
+    public ResponseEntity<ServiceResponse<Void>> delete(@PathVariable ID id) {
+        ServiceResponse<?> resp = service.delete(id);
+        ServiceResponse<Void> response = new ServiceResponse<>();
+        response.setStatus(resp.getStatus());
+        response.setMessage(resp.getMessage());
+        response.setErrorStackTrace(resp.getErrorStackTrace());
+        response.setStatusCode(resp.getStatusCode());
+        return ResponseEntity.status(resp.getStatus() == ServiceResponse.ResStatus.SUCCESS ? 200 : 500).body(response);
     }
 
     @GetMapping("/fields/many")
-    public ResponseEntity<?> getByFields(@RequestParam Map<String, String> params) {
+    public ResponseEntity<ServiceResponse<List<D>>> getByFields(@RequestParam Map<String, String> params) {
         List<FilterCondition> conditions = new ArrayList<>();
         for (Map.Entry<String, String> entry : params.entrySet()) {
             String key = entry.getKey();
             String value = entry.getValue();
-
             String field = key;
             FilterOperator operator = FilterOperator.EQ;
-
             if (key.contains("[")) {
                 field = key.substring(0, key.indexOf("["));
                 String op = key.substring(key.indexOf("[") + 1, key.indexOf("]"));
                 operator = FilterOperator.valueOf(op.toUpperCase());
             }
-
             if (operator == FilterOperator.BETWEEN) {
                 String[] parts = value.split(",");
                 conditions.add(new FilterCondition(field, operator, parts));
@@ -148,11 +122,24 @@ public abstract class BaseController<T, D, ID> {
             }
         }
 
-        List<T> entities = service.findAllByConditions(conditions);
-        if (entityToDTO.isPresent()) {
-            List<D> dtos = entities.stream().map(entityToDTO.get()).toList();
-            return ResponseEntity.ok(dtos);
-        }
-        return ResponseEntity.ok(entities);
+        ServiceResponse<List<T>> resp = service.findAllByConditions(conditions);
+        if (resp.getStatus() != ServiceResponse.ResStatus.SUCCESS) return ResponseEntity.status(resp.getStatusCode()).body(errorResponse(resp));
+
+        List<D> data = entityToDTO.isPresent() ? resp.getData().stream().map(entityToDTO.get()).toList() : (List<D>) resp.getData();
+        return ResponseEntity.ok(buildResponse(resp, data));
+    }
+
+    private <R> ServiceResponse<R> buildResponse(ServiceResponse<?> source, R data) {
+        ServiceResponse<R> response = new ServiceResponse<>();
+        response.setStatus(source.getStatus());
+        response.setMessage(source.getMessage());
+        response.setErrorStackTrace(source.getErrorStackTrace());
+        response.setStatusCode(source.getStatusCode());
+        response.setData(data);
+        return response;
+    }
+
+    private <R> ServiceResponse<R> errorResponse(ServiceResponse<?> source) {
+        return buildResponse(source, null);
     }
 }

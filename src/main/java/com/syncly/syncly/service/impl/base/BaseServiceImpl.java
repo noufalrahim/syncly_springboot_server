@@ -1,11 +1,11 @@
 package com.syncly.syncly.service.impl.base;
 
 import java.lang.reflect.Field;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -14,6 +14,7 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import com.syncly.syncly.filter.FilterCondition;
 import com.syncly.syncly.filter.FilterSpecification;
 import com.syncly.syncly.service.base.BaseService;
+import com.syncly.syncly.wrapper.ServiceResponse;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
@@ -33,54 +34,42 @@ public class BaseServiceImpl<T, ID> implements BaseService<T, ID> {
     private final Class<T> entityClass;
 
     public BaseServiceImpl(JpaRepository<T, ID> repository,
-            JpaSpecificationExecutor<T> specRepository,
-            Class<T> entityClass) {
+                           JpaSpecificationExecutor<T> specRepository,
+                           Class<T> entityClass) {
         this.repository = repository;
         this.specRepository = specRepository;
         this.entityClass = entityClass;
     }
 
     @Override
-    public List<T> findAll() {
-        return repository.findAll();
+    public ServiceResponse<List<T>> findAll() {
+        List<T> result = repository.findAll();
+        return buildResponse(result);
     }
 
     @Override
-    public Optional<T> findById(ID id) {
-        return repository.findById(id);
+    public ServiceResponse<Optional<T>> findById(ID id) {
+        log.info("Fetching entity with ID: {}", id);
+        Optional<T> entity = repository.findById(id);
+        return buildResponse(entity);
     }
 
     @Override
-    public T create(T entity) throws IllegalArgumentException, IllegalAccessException {
+    public ServiceResponse<T> create(T entity) throws IllegalArgumentException, IllegalAccessException {
         mapIdsToEntities(entity);
         T saved = repository.save(entity);
-
-        // Force loading of ManyToOne fields
-        for (Field field : saved.getClass().getDeclaredFields()) {
-            if (!field.getType().isPrimitive() && !field.getType().getName().startsWith("java")) {
-                field.setAccessible(true);
-                try {
-                    Object relation = field.get(saved);
-                    if (relation != null) {
-                        relation = entityManager.find(relation.getClass(),
-                                entityManager.getEntityManagerFactory().getPersistenceUnitUtil().getIdentifier(relation));
-                        field.set(saved, relation);
-                    }
-                } catch (Exception ignored) {
-                }
-            }
-        }
-
-        return saved;
+        forceLoadRelations(saved);
+        return buildResponse(saved);
     }
 
     @Override
-    public List<T> createMany(List<T> entities) {
-        return repository.saveAll(entities);
+    public ServiceResponse<List<T>> createMany(List<T> entities) {
+        List<T> saved = repository.saveAll(entities);
+        return buildResponse(saved);
     }
 
     @Override
-    public T createIfNotExist(T entity, String uniqueField) {
+    public ServiceResponse<T> createIfNotExist(T entity, String uniqueField) {
         try {
             Field field = entityClass.getDeclaredField(uniqueField);
             field.setAccessible(true);
@@ -92,76 +81,78 @@ public class BaseServiceImpl<T, ID> implements BaseService<T, ID> {
 
             List<T> existing = query.getResultList();
             if (!existing.isEmpty()) {
-                throw new RuntimeException(uniqueField + " " + value + " already exists");
+                return buildErrorResponse(uniqueField + " " + value + " already exists");
             }
-            return repository.save(entity);
+
+            T saved = repository.save(entity);
+            return buildResponse(saved);
 
         } catch (Exception e) {
-            throw new RuntimeException("Error checking uniqueness", e);
+            return buildErrorResponse("Error checking uniqueness: " + e.getMessage(), e);
         }
     }
 
     @Override
-    public T updateById(ID id, T entity) {
+    public ServiceResponse<T> updateById(ID id, T entity) {
         if (!repository.existsById(id)) {
-            throw new RuntimeException("Entity with ID " + id + " not found");
+            return buildErrorResponse("Entity with ID " + id + " not found");
         }
-        return repository.save(entity);
+        T saved = repository.save(entity);
+        return buildResponse(saved);
     }
 
     @Override
-    public void delete(ID id) {
+    public ServiceResponse<?> delete(ID id) {
+        if (!repository.existsById(id)) {
+            return buildErrorResponse("Entity with ID " + id + " not found");
+        }
         repository.deleteById(id);
+        return buildResponse("Deleted successfully");
     }
 
     @Override
-    public List<T> findAllByFields(Map<String, Object> filter, String orderBy, String orderDir) {
+    public ServiceResponse<List<T>> findAllByFields(Map<String, Object> filter, String orderBy, String orderDir) {
         String jpql = "SELECT e FROM " + entityClass.getSimpleName() + " e";
 
         if (filter != null && !filter.isEmpty()) {
-            jpql += " WHERE ";
-            List<String> conditions = new ArrayList<>();
-
-            for (String key : filter.keySet()) {
+            List<String> conditions = filter.keySet().stream().map(key -> {
                 if (key.endsWith("Id")) {
-                    String relation = key.substring(0, key.length() - 2); // remove "Id"
-                    conditions.add("e." + relation + ".id = :" + key);
+                    String relation = key.substring(0, key.length() - 2);
+                    return "e." + relation + ".id = :" + key;
                 } else {
-                    conditions.add("e." + key + " = :" + key);
+                    return "e." + key + " = :" + key;
                 }
-            }
+            }).collect(Collectors.toList());
 
-            jpql += String.join(" AND ", conditions);
+            jpql += " WHERE " + String.join(" AND ", conditions);
         }
 
         if (orderBy != null) {
-            jpql += " ORDER BY e." + orderBy + " "
-                    + (orderDir != null && orderDir.equalsIgnoreCase("desc") ? "DESC" : "ASC");
+            jpql += " ORDER BY e." + orderBy + " " + (orderDir != null && orderDir.equalsIgnoreCase("desc") ? "DESC" : "ASC");
         }
 
         TypedQuery<T> query = entityManager.createQuery(jpql, entityClass);
 
         if (filter != null && !filter.isEmpty()) {
-            for (Map.Entry<String, Object> entry : filter.entrySet()) {
-                query.setParameter(entry.getKey(), entry.getValue());
-            }
+            filter.forEach(query::setParameter);
         }
 
-        return query.getResultList();
+        return buildResponse(query.getResultList());
     }
 
     @Override
-    public List<T> findAllByConditions(List<FilterCondition> conditions) {
+    public ServiceResponse<List<T>> findAllByConditions(List<FilterCondition> conditions) {
         if (conditions == null || conditions.isEmpty()) {
-            return repository.findAll();
+            return buildResponse(repository.findAll());
         }
 
         Specification<T> spec = conditions.stream()
-                .map(condition -> (Specification<T>) new FilterSpecification<T>(condition))
+                .map(FilterSpecification<T>::new)
+                .map(fs -> (Specification<T>) fs)
                 .reduce(Specification::and)
                 .orElse(null);
 
-        return specRepository.findAll(spec);
+        return buildResponse(specRepository.findAll(spec));
     }
 
     private void mapIdsToEntities(T entity) throws IllegalArgumentException, IllegalAccessException {
@@ -174,16 +165,53 @@ public class BaseServiceImpl<T, ID> implements BaseService<T, ID> {
                     try {
                         Field relationField = entity.getClass().getDeclaredField(relationName);
                         relationField.setAccessible(true);
-                        Class<?> relationClass = relationField.getType();
-
-                        Object relatedEntity = entityManager.find(relationClass, UUID.fromString(idValue.toString()));
+                        Object relatedEntity = entityManager.find(relationField.getType(), UUID.fromString(idValue.toString()));
                         relationField.set(entity, relatedEntity);
-
-                    } catch (NoSuchFieldException ignored) {
-                    }
+                    } catch (NoSuchFieldException ignored) {}
                 }
             }
         }
     }
 
+    private void forceLoadRelations(T entity) {
+        for (Field field : entity.getClass().getDeclaredFields()) {
+            if (!field.getType().isPrimitive() && !field.getType().getName().startsWith("java")) {
+                field.setAccessible(true);
+                try {
+                    Object relation = field.get(entity);
+                    if (relation != null) {
+                        relation = entityManager.find(relation.getClass(),
+                                entityManager.getEntityManagerFactory().getPersistenceUnitUtil().getIdentifier(relation));
+                        field.set(entity, relation);
+                    }
+                } catch (Exception ignored) {}
+            }
+        }
+    }
+
+    private <R> ServiceResponse<R> buildResponse(R data) {
+        ServiceResponse<R> response = new ServiceResponse<>();
+        response.setData(data);
+        response.setStatus(ServiceResponse.ResStatus.SUCCESS);
+        response.setMessage("Operation successful");
+        response.setStatusCode(200);
+        return response;
+    }
+
+    private <R> ServiceResponse<R> buildErrorResponse(String message) {
+        ServiceResponse<R> response = new ServiceResponse<>();
+        response.setStatus(ServiceResponse.ResStatus.ERROR);
+        response.setMessage(message);
+        response.setStatusCode(400);
+        return response;
+    }
+
+    private <R> ServiceResponse<R> buildErrorResponse(String message, Exception e) {
+        ServiceResponse<R> response = new ServiceResponse<>();
+        response.setStatus(ServiceResponse.ResStatus.ERROR);
+        response.setMessage(message);
+        response.setErrorStackTrace(e.toString());
+        response.setStatusCode(500);
+        return response;
+    }
 }

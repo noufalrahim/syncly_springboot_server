@@ -1,5 +1,7 @@
 package com.syncly.syncly.service.impl;
 
+import java.util.UUID;
+
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Service;
 
@@ -9,7 +11,7 @@ import com.syncly.syncly.service.UserService;
 import com.syncly.syncly.service.impl.base.BaseServiceImpl;
 
 @Service
-public class UserServiceImpl extends BaseServiceImpl<User, String> implements UserService{
+public class UserServiceImpl extends BaseServiceImpl<User, UUID> implements UserService{
     public UserServiceImpl(UserRepository repository, JpaSpecificationExecutor<User> specRepository){
         super(repository, specRepository, User.class);
     }
