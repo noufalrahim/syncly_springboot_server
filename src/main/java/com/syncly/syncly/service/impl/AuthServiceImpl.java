@@ -29,7 +29,7 @@ public class AuthServiceImpl implements AuthService {
     private final PasswordEncoder passwordEncoder;
 
     public AuthServiceImpl(AuthenticationManager authenticationManager, JwtUtil jwtUtil,
-                           UserService userService, PasswordEncoder passwordEncoder) {
+            UserService userService, PasswordEncoder passwordEncoder) {
         this.authenticationManager = authenticationManager;
         this.jwtUtil = jwtUtil;
         this.userService = userService;
@@ -102,4 +102,49 @@ public class AuthServiceImpl implements AuthService {
 
         return response;
     }
+
+    @Override
+    public ServiceResponse<User> validateToken(String token) {
+        ServiceResponse<User> response = new ServiceResponse<>();
+
+        try {
+            String email = jwtUtil.extractUsername(token);
+
+            Map<String, Object> filter = new HashMap<>();
+            filter.put("email", email);
+            ServiceResponse<List<User>> usersResp = userService.findAllByFields(filter, null, null);
+            List<User> users = usersResp != null ? usersResp.getData() : null;
+            log.info("users: {}", users);
+
+            if (users == null || users.isEmpty()) {
+                response.setStatus(ServiceResponse.ResStatus.ERROR);
+                response.setMessage("Invalid token: user not found");
+                response.setData(null);
+                return response;
+            }
+
+            User user = users.get(0);
+            boolean isValid = jwtUtil.validateToken(token, user.getEmail());
+
+            if (!isValid) {
+                response.setStatus(ServiceResponse.ResStatus.ERROR);
+                response.setMessage("Invalid or expired token");
+                response.setData(null);
+                return response;
+            }
+
+            response.setStatus(ServiceResponse.ResStatus.SUCCESS);
+            response.setMessage("Token is valid");
+            response.setData(user);
+
+        } catch (Exception e) {
+            log.error("Error validating token", e);
+            response.setStatus(ServiceResponse.ResStatus.ERROR);
+            response.setMessage("Error validating token: " + e.getMessage());
+            response.setData(null);
+        }
+
+        return response;
+    }
+
 }

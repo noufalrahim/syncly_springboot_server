@@ -1,11 +1,14 @@
 package com.syncly.syncly.controller;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.syncly.syncly.dto.LoginDTO;
 import com.syncly.syncly.dto.LoginResponseDTO;
 import com.syncly.syncly.entity.User;
 import com.syncly.syncly.service.AuthService;
@@ -32,21 +35,36 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<ServiceResponse<LoginResponseDTO>> login(@RequestBody LoginRequest request) {
+    public ResponseEntity<ServiceResponse<LoginResponseDTO>> login(@RequestBody LoginDTO request) {
         log.info("User login attempt with email: {}", request.getEmail());
         // return ResponseEntity.status(Response.SC_NOT_IMPLEMENTED).build();
         ServiceResponse<LoginResponseDTO> response = authService.login(request.getEmail(), request.getPassword());
         return ResponseEntity.ok(response);
     }
 
-    public static class LoginRequest {
-        private String email;
-        private String password;
+    @GetMapping("/validate-token")
+    public ResponseEntity<ServiceResponse<User>> validateToken(@RequestParam(required = false) String token,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authHeader) {
+        log.info("Validating token...");
 
-        public String getEmail() { return email; }
-        public void setEmail(String email) { this.email = email; }
+        String jwtToken = null;
 
-        public String getPassword() { return password; }
-        public void setPassword(String password) { this.password = password; }
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            jwtToken = authHeader.substring(7);
+        } else if (token != null) {
+            jwtToken = token;
+        }
+
+        if (jwtToken == null || jwtToken.isEmpty()) {
+            ServiceResponse<User> errorResponse = new ServiceResponse<>();
+            errorResponse.setStatus(ServiceResponse.ResStatus.ERROR);
+            errorResponse.setMessage("Token not provided");
+            errorResponse.setData(null);
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+
+        ServiceResponse<User> response = authService.validateToken(jwtToken);
+        return ResponseEntity.ok(response);
     }
+
 }
