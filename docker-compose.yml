@@ -1,20 +1,51 @@
+# version: '3.9'
+
+# services:
+#   postgres:
+#     image: postgres:17-alpine
+#     container_name: syncly-postgres
+#     environment:
+#       POSTGRES_DB: synclydb
+#       POSTGRES_USER: postgres
+#       POSTGRES_PASSWORD: noufalrahim
+#     ports:
+#       - "5432:5432"
+#     networks:
+#       - syncly-network
+#     volumes:
+#       - pgdata:/var/lib/postgresql/data  # persist DB data
+
+#   app:
+#     build:
+#       context: .
+#       dockerfile: Dockerfile
+#     container_name: syncly-app
+#     ports:
+#       - "8080:8080"
+#     environment:
+#       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/synclydb
+#       SPRING_DATASOURCE_USERNAME: postgres
+#       SPRING_DATASOURCE_PASSWORD: noufalrahim
+#       SPRING_DEVTOOLS_RESTART_ENABLED: "true"
+#     depends_on:
+#       - postgres
+#     networks:
+#       - syncly-network
+#     volumes:
+#       - .:/app                    # mount source for hot reload
+#       - ~/.m2:/root/.m2           # cache Maven dependencies
+#     command: ./mvnw spring-boot:run -Dspring-boot.run.fork=false
+
+# networks:
+#   syncly-network:
+#     driver: bridge
+
+# volumes:
+#   pgdata:
+
 version: '3.9'
 
 services:
-  postgres:
-    image: postgres:17-alpine
-    container_name: syncly-postgres
-    environment:
-      POSTGRES_DB: synclydb
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: noufalrahim
-    ports:
-      - "5432:5432"
-    networks:
-      - syncly-network
-    volumes:
-      - pgdata:/var/lib/postgresql/data  # persist DB data
-
   app:
     build:
       context: .
@@ -23,22 +54,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/synclydb
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: noufalrahim
-      SPRING_DEVTOOLS_RESTART_ENABLED: "true"
-    depends_on:
-      - postgres
-    networks:
-      - syncly-network
-    volumes:
-      - .:/app                    # mount source for hot reload
-      - ~/.m2:/root/.m2           # cache Maven dependencies
+      SPRING_DATASOURCE_URL: jdbc:postgresql://dpg-d3psk8er433s73am8f70-a.oregon-postgres.render.com:5432/synclydb_j5wr
+      SPRING_DATASOURCE_USERNAME: noufalrahim
+      SPRING_DATASOURCE_PASSWORD: j2BT2K9SGDztP6xtEUOkHEDCxHVNbqB3
     command: ./mvnw spring-boot:run -Dspring-boot.run.fork=false
-
-networks:
-  syncly-network:
-    driver: bridge
-
-volumes:
-  pgdata:
